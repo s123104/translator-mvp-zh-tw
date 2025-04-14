@@ -1,0 +1,16 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# 虛擬環境目錄
+venv/
+
+# 環境變數設定檔
+.env
+
+# 金鑰儲存資料夾
+key
+key/*.json
+
+# 狀態紀錄檔（可選）
+state.json
