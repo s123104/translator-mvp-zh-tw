@@ -1,5 +1,7 @@
 # 英文翻譯繁體中文 MVP 專案
 
+👉 本專案是一個使用 Microsoft 與 Google API 所製作的「英文 → 繁體中文」翻譯工具，具備免費額度自動切換與使用量追蹤功能，適合用於 CLI、自動翻譯工具與批次處理。
+
 這是一個使用 Python 製作的 MVP（Minimal Viable Product）翻譯工具，能夠將英文翻譯成繁體中文。專案結合 **Microsoft Translator Text API** 與 **Google Cloud Translation API**，利用各自的免費額度自動切換 API，避免超出免費額度產生費用。系統會依據每月累計的翻譯字符數進行判斷，並在每月 UTC 的 1 號重置免費額度。
 
 > **重點說明：**
@@ -14,6 +16,7 @@
 
 ```
 translator_mvp/
+├── key/                 # 存放所有 API 金鑰與憑證的資料夾（例如：translate-key.json ）
 ├── .env-example         # 範例環境變數設定檔
 ├── .gitignore           # Git 忽略設定（忽略虛擬環境、.env 與 state.json）
 ├── README.md            # 本文件：專案詳細說明
@@ -21,6 +24,8 @@ translator_mvp/
 ├── state.json           # 每月 API 使用量的狀態檔（程式自動生成、記錄累計字符數）
 └── translate.py         # 主程式，包含詳細繁體中文註解與模式切換功能
 ```
+
+**注意：** 你所有的金鑰與憑證（例如，Google JSON 金鑰）都放在 `translator_mvp/key/` 資料夾內。記得在 .env 文件中使用相對路徑指向這些金鑰檔案。
 
 ---
 
@@ -55,13 +60,13 @@ python3 -m venv venv
 
 ### 3. 安裝必要套件
 
-在虛擬環境中執行以下指令安裝所需套件：
+在虛擬環境中執行下列指令安裝所需套件：
 
 ```bash
 pip install -r requirements.txt
 ```
 
-`requirements.txt` 的內容如下：
+`requirements.txt` 內容如下：
 
 ```
 requests
@@ -80,21 +85,20 @@ python-dotenv
 
 2. **建立 Translator 資源**：
 
-   - 登入 [Azure Portal](https://portal.azure.com/)，點選「建立資源」。
+   - 登入 [Azure Portal](https://portal.azure.com/) 後，點選「建立資源」。
    - 搜尋「Translator」或「Cognitive Services」內的 Translator 資源，然後選擇建立。
-   - 在資源建立過程中，注意：
+   - 在資源建立過程中注意：
      - **訂閱**：選擇你的訂閱。
      - **資源群組**：可使用現有資源群組，或自行建立一個，但注意資源群組的區域必須選擇支援 Translator API 的地區（例如 `eastasia`、`southeastasia`），**Global 不適用**。
      - **資源名稱**：例如 `MyTranslatorService`。
-     - **區域**：請選擇例如 `eastasia` 或 `southeastasia`。
-     - **定價層**：選擇 **F0（免費層）**，可免費翻譯 2,000,000 字符/月。
-   - 檢查無誤後，點選「建立」。部署過程可能需要數分鐘。
+     - **區域**：請選擇 `eastasia` 或 `southeastasia`。
+     - **定價層**：選擇 **F0（免費層）**，每月可免費翻譯 2,000,000 字符。
+   - 建立成功後，部署可能需要數分鐘。
 
 3. **取得金鑰與端點**：
-   - 資源建立完成後，進入該 Translator 資源頁面。
-   - 在左側選單中找到「金鑰與端點 (Keys and Endpoint)」。
-   - 複製其中一個金鑰（Key1 或 Key2 任選），這就是你的 `MS_TRANSLATOR_KEY`。
-   - 也請記下 **端點 URL**（例如 `https://api.cognitive.microsofttranslator.com/`）以及你選擇的資源區域（例如 `eastasia`）。
+   - 進入你建立的 Translator 資源頁面，點選左側的「金鑰與端點 (Keys and Endpoint)」。
+   - 複製其中一個金鑰（例如 Key1），這就是你的 `MS_TRANSLATOR_KEY`。
+   - 記下 **端點 URL**（例如 `https://api.cognitive.microsofttranslator.com/`）和資源所在區域（例如 `eastasia`）。
 
 ### B. Google Cloud Translation API (Basic 版)
 
@@ -103,19 +107,19 @@ python-dotenv
 
 2. **啟用 Cloud Translation API**：
 
-   - 在 Google Cloud Console 的左側選單中，點選「API 與服務」>「啟用 API 與服務」。
-   - 搜尋「Cloud Translation API」，點選後啟用。請確認你使用的是 Basic 版 API（v2 版），此版本享有每月 500,000 字符的免費配額。
+   - 在左側選單中點選「API 與服務」>「啟用 API 與服務」。
+   - 搜尋「Cloud Translation API」，點選後啟用。請確認啟用的是 Basic 版 API（v2 版），此版本每月享有 500,000 字符免費配額。
 
 3. **建立服務帳戶並下載憑證**：
-   - 進入「API 與服務」>「憑證」。
-   - 點選「建立憑證」>「服務帳戶」，根據指示建立服務帳戶，並授予 Cloud Translation API 用戶權限。
-   - 為該服務帳戶建立一個 JSON 金鑰檔案，下載後妥善保存，其路徑例如為 `/path/to/your/translate-key.json`。
+   - 前往「API 與服務」>「憑證」。
+   - 點選「建立憑證」>「服務帳戶」，按照指示建立服務帳戶，並授予 Cloud Translation API 使用權限。
+   - 為服務帳戶建立一個 JSON 金鑰檔案，下載後保存至 `translator_mvp/key/` 內（例如，命名為 `translate-key.json`）。
 
 ---
 
 ## 環境變數設定 (.env 檔案)
 
-請根據以下 `.env-example` 文件建立一個 `.env` 文件（此檔案已列入 .gitignore，不會上傳版本控制系統）。
+請根據以下 `.env-example` 文件建立一個 `.env` 文件（此檔案已列入 .gitignore，不會上傳 GitHub）。
 
 ```ini
 # .env-example
@@ -127,7 +131,8 @@ MS_TRANSLATOR_REGION=eastasia
 TRANSLATOR_TEXT_ENDPOINT=https://api.cognitive.microsofttranslator.com/
 
 # Google Cloud Translation API 設定
-GOOGLE_APPLICATION_CREDENTIALS=/path/to/your/translate-key.json
+# 注意：金鑰檔案放在專案的 key/ 資料夾內，請使用相對路徑
+GOOGLE_APPLICATION_CREDENTIALS=key/translate-key.json
 ```
 
 ---
@@ -136,29 +141,29 @@ GOOGLE_APPLICATION_CREDENTIALS=/path/to/your/translate-key.json
 
 ### 執行翻譯
 
-在虛擬環境中、於專案根目錄下執行：
+在虛擬環境中、於專案根目錄執行：
 
 ```bash
 python translate.py "Hello, how are you?"
 ```
 
-系統會根據 `state.json` 中累計的 API 使用量自動選擇使用 Microsoft 或 Google 翻譯服務，並輸出翻譯結果（中文）。
+系統會根據 `state.json` 中累計的 API 使用量自動選擇 Microsoft 或 Google 翻譯服務，並輸出翻譯結果（繁體中文）。
 
-若執行 `python translate.py` 而無參數，程式會提示你輸入英文文本。
+若執行 `python translate.py` 而無參數，程式將提示你輸入英文文本。
 
 ### 模式選項
 
 本程式支援兩種模式（透過 `--mode` 參數設定），皆會更新累計使用量：
 
 - **正式模式 (production, 預設)**  
-  根據累計使用量自動決定使用哪個 API，輸出乾淨的翻譯結果：
+  程式會根據累計使用量自動決定使用哪個 API，輸出乾淨的翻譯結果：
 
   ```bash
   python translate.py "Hello, how are you?"
   ```
 
 - **測試模式 (test-google)**  
-  強制使用 Google 翻譯，並顯示詳細 DEBUG 訊息，方便確認 Google API 的運作，同時仍會更新使用量：
+  強制使用 Google 翻譯，並印出詳細 DEBUG 訊息以便檢查 Google API 回應，同時也會更新累計使用量：
   ```bash
   python translate.py "Hello, how are you?" --mode test-google
   ```
@@ -168,26 +173,26 @@ python translate.py "Hello, how are you?"
 ## 常見問題與故障排除
 
 - **環境變數未正確讀取**：  
-  確認專案根目錄下已建立 `.env` 文件，且內容正確無誤。程式使用 [python-dotenv](https://pypi.org/project/python-dotenv/) 自動讀取 `.env`，但這些變數僅在 Python 程式中可用，不會影響你的 shell 環境。
+  請確認專案根目錄已正確建立 `.env` 文件，且內容無誤。程式使用 [python-dotenv](https://pypi.org/project/python-dotenv/) 自動讀取 `.env`，注意這些變數只在 Python 程式中可用，不會影響 shell 環境。
 
 - **API 金鑰／憑證錯誤**：  
-  請重新確認 `.env` 中的金鑰、區域以及 Google JSON 憑證路徑是否正確，確保無多餘空格或錯誤字元。
+  請重新檢查 `.env` 中的金鑰、區域以及 Google JSON 憑證的路徑是否正確，避免多餘空格或錯誤字元。
 
 - **state.json 權限問題**：  
-  確保專案目錄具有寫入權限，否則程式將無法建立或更新 `state.json`。
+  確保專案目錄具有足夠權限寫入 `state.json`。如出現權限錯誤，請調整目錄權限或將專案移至有寫入權限的位置。
 
 - **免費額度超限**：  
-  請定期檢查累計使用量，確保單月翻譯字符數不超過免費額度。當一個 API 的使用量達到免費額度 90% 時，程式會自動切換到另一服務；但若兩者均超出免費額度，後續請求可能會產生費用。
+  請定期檢查 `state.json` 中的累計使用量，確保單月翻譯字符數不超出免費額度。當某 API 使用量達到免費額度 90% 時，程式會自動切換到另一服務；但若兩者均超出免費額度，後續請求可能會產生費用。
 
 ---
 
 ## 專案擴充與貢獻
 
 - **擴充應用**：  
-  本專案使用 `state.json` 記錄每月的翻譯字符數，你可以根據需要擴充其他功能，例如「剩餘免費額度查詢」介面，或新增更多語言支持。
+  本專案使用 `state.json` 記錄每月的翻譯字符數，你可以根據需求擴充功能，例如「剩餘免費額度查詢」介面、更多語言支持或其他 API 整合。
 
 - **貢獻指南**：  
-  歡迎 fork、修改及提交 issue，若有改進建議或錯誤修正，請隨時提出，共同優化這個工具！
+  歡迎 fork 此專案、提出問題或提交 pull request 來一起優化工具，共同打造更完善的翻譯解決方案！
 
 ---
 
@@ -197,4 +202,4 @@ python translate.py "Hello, how are you?"
 
 ---
 
-希望這份詳細的說明能夠幫助你順利設置與運行翻譯工具，並保障你在開發與串接過程中不出現計費上的意外！有任何問題歡迎發 issue 或聯絡，祝你開發愉快！
+希望這份詳細的說明能夠幫助你順利設置與運行翻譯工具，保障你在開發與串接過程中不出現計費上的意外！如有任何問題，歡迎發 issue 或聯絡，祝你開發愉快！
