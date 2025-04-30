@@ -8,13 +8,24 @@ import requests
 from google.cloud import translate_v2 as translate
 from dotenv import load_dotenv
 
-# 載入 .env 檔案中的環境變數
-load_dotenv()
+# 路徑處理：支援從上層目錄導入
+current_dir = os.path.dirname(os.path.abspath(__file__))
+
+# 載入 .env 檔案 - 先嘗試載入翻譯模組自己的 .env，如果不存在則嘗試項目根目錄的 .env
+translate_env = os.path.join(current_dir, '.env')
+if os.path.exists(translate_env):
+    load_dotenv(translate_env)
+else:
+    # 嘗試載入專案根目錄的 .env
+    project_env = os.path.join(os.path.dirname(current_dir), '.env')
+    if os.path.exists(project_env):
+        load_dotenv(project_env)
+    else:
+        load_dotenv()  # 嘗試預設位置
 
 # 使用 UTC 時間來判斷月份（避免本地時間偏差導致計費邏輯錯亂）
 utc_now = datetime.datetime.utcnow()
 current_month = utc_now.strftime("%Y-%m")
-# (DEBUG 訊息僅在測試模式下由 main() 印出)
 
 # 從環境變數取得 Microsoft Translator API 的金鑰與區域設定
 MS_KEY = os.getenv("MS_TRANSLATOR_KEY")
@@ -22,12 +33,11 @@ MS_REGION = os.getenv("MS_TRANSLATOR_REGION")
 # 取得 Google Cloud Translation API 的憑證檔路徑
 GOOGLE_CRED = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 
-if not MS_KEY:
-    print("錯誤：未設定 Microsoft Translator API 金鑰，請檢查 .env 檔案")
-    sys.exit(1)
-if not GOOGLE_CRED:
-    print("錯誤：未設定 Google Cloud Translation 憑證路徑，請檢查 .env 檔案")
-    sys.exit(1)
+# 如果 GOOGLE_CRED 是相對路徑，轉換為絕對路徑
+if GOOGLE_CRED and not os.path.isabs(GOOGLE_CRED):
+    # 假設相對於翻譯模組目錄
+    GOOGLE_CRED = os.path.join(current_dir, GOOGLE_CRED)
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = GOOGLE_CRED
 
 # 定義免費額度與 90% 門檻值
 MS_FREE_LIMIT = 2000000         # Microsoft 每月免費 2,000,000 字符
@@ -36,7 +46,7 @@ MS_THRESHOLD = int(MS_FREE_LIMIT * 0.9)       # 約 1,800,000 字符
 GOOGLE_THRESHOLD = int(GOOGLE_FREE_LIMIT * 0.9)  # 約 450,000 字符
 
 # state.json 檔案（用來累計使用量）
-state_file = "state.json"
+state_file = os.path.join(current_dir, "state.json")
 
 def load_state():
     """
@@ -106,34 +116,22 @@ def translate_with_google(text: str, debug: bool = False) -> str:
         return None
     return result.get("translatedText")
 
-def main():
-    parser = argparse.ArgumentParser(description="英文翻譯繁體中文 MVP 專案")
-    parser.add_argument("text", nargs="*", help="待翻譯的英文文本")
-    # 模式選項：正式模式 production（預設）或 test-google（測試 Google 翻譯，顯示 DEBUG 訊息，強制使用 Google）
-    parser.add_argument("--mode", choices=["production", "test-google"], default="production",
-                        help="執行模式：production（正式模式）或 test-google（測試 Google 翻譯，顯示 DEBUG 訊息，強制使用 Google）")
-    args = parser.parse_args()
-
-    # 判斷是否啟用 debug，test-google 模式下 debug 為 True
-    debug = (args.mode == "test-google")
-
-    if args.text:
-        english_text = " ".join(args.text)
-    else:
-        english_text = input("請輸入要翻譯的英文文本: ")
-
+def translate_text(english_text: str, debug: bool = False) -> str:
+    """
+    統一的翻譯接口，自動選擇翻譯服務並更新用量。
+    """
     # 載入累計使用量狀態
     state = load_state()
 
-    # 在 test-google 模式下，強制選用 Google 翻譯 (不考慮 Microsoft 使用量)
+    # 在 debug 模式下，強制選用 Google 翻譯
     if debug:
-        print("==== 測試模式：強制使用 Google 翻譯（DEBUG 模式） ====")
-        # 印出 debug 時間資訊
-        print(f"[DEBUG] UTC 現在時間：{utc_now.isoformat()}")
-        print(f"[DEBUG] 當前月份 (UTC)：{current_month}")
+        if debug:
+            print("==== 測試模式：強制使用 Google 翻譯（DEBUG 模式） ====")
+            print(f"[DEBUG] UTC 現在時間：{utc_now.isoformat()}")
+            print(f"[DEBUG] 當前月份 (UTC)：{current_month}")
         use_ms = False
     else:
-        # 正式模式根據累計使用量自動選擇 API
+        # 自動選擇 API
         use_ms = True
         if state["microsoft_usage"] >= MS_THRESHOLD and state["google_usage"] < GOOGLE_THRESHOLD:
             use_ms = False
@@ -146,15 +144,34 @@ def main():
         translated_text = translate_with_google(english_text, debug=debug)
         service_used = "google_usage"
 
+    # 更新使用量
     if translated_text is not None:
-        # 輸出翻譯結果，正式模式和測試模式均印出
+        state[service_used] += len(english_text)
+        save_state(state)
+
+    return translated_text
+
+def main():
+    parser = argparse.ArgumentParser(description="英文翻譯繁體中文 MVP 專案")
+    parser.add_argument("text", nargs="*", help="待翻譯的英文文本")
+    parser.add_argument("--mode", choices=["production", "test-google"], default="production",
+                        help="執行模式：production（正式模式）或 test-google（測試 Google 翻譯）")
+    args = parser.parse_args()
+
+    # 判斷是否啟用 debug
+    debug = (args.mode == "test-google")
+
+    if args.text:
+        english_text = " ".join(args.text)
+    else:
+        english_text = input("請輸入要翻譯的英文文本: ")
+
+    translated_text = translate_text(english_text, debug=debug)
+
+    if translated_text is not None:
         print(f"翻譯結果: {translated_text}")
     else:
         sys.exit(1)
-
-    # 更新使用量：依據原英文字符數累計，不論模式皆更新 state.json
-    state[service_used] += len(english_text)
-    save_state(state)
 
 if __name__ == "__main__":
     main()
